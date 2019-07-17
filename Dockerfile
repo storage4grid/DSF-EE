@@ -12,10 +12,10 @@ RUN apt-get -y install nginx \
 
 RUN pip3 install -r requirements.txt --src /usr/local/src
 
-RUN mkdir /data 
-COPY persistence.db /data/
-RUN chmod 777 /data/persistence.db
-VOLUME /data
+# RUN mkdir /data 
+# COPY persistence.db /data/
+# RUN chmod 777 /data/persistence.db
+# VOLUME /data
 
 # NEW
 # RUN openssl req -x509 -nodes -days 565 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt

@@ -90,9 +90,7 @@
 * https://www.digitalocean.com/community/tutorials/how-to-serve-flask-applications-with-uswgi-and-nginx-on-ubuntu-18-04
 * ---------------------------------------------------------------------------------------------------------------
 * @Features exposed towards Professional GUI & DSF-SE:
-*
-* RECEIVED WHILE -- FROM -- (REST --):
-* -POST- https://dwh.storage4grid.eu:9082/EnergyService/api/event/recharge/new
+* -POST- https://dwh.storage4grid.eu:9082/EE/input
 * ---------------------------------------------------------------------------------------------------------------
 * Following APIs are all REST GET:
 * TESTING PURPOSES:
@@ -100,7 +98,7 @@
 * ---------------------------------------------------------------------------------------------------------------
 * @Author: Ligios Michele
 * @Created: 2019-06-11
-* @Updated: 2019-06-11
+* @Updated: 2019-07-17
 '''
 # ------------------------------------------------------------------------------------ #
 # Generic Libraries:
@@ -133,13 +131,11 @@ sys.path.insert(0, os.path.join(base_path, 'lib'))
 app = Flask(__name__)
 # ------------------------------------------------------------------------------------ #
 # TODO: VERIFY VERY WELL THE FOLLOWING FLAGS BEFORE BUILDING!
-localDebug       = False        # Required for building local python app (not inside docker) in HTTPS
-localDebugHTTP   = True         # Required for building local python app (not inside docker) in HTTP
-localDebugDocker = False        # Required for building local docker images (not on DWH)
-devScenario 	 = False	# Required to setup the security parameters of the mqtt data (cloud) broker 
+localDebugHTTP   = True         # Required for building local python app (not inside docker) in HTTP or HTTPS
 # ------------------------------------------------------------------------------------ #
 enablePrints     = True
-enableFullDebug  = False
+enableFullPrints = False
+enableFulldebug  = False
 # ------------------------------------------------------------------------------------ #
 @app.route("/")
 def home():
@@ -256,8 +252,9 @@ simulatedBatteryData = [[2014,1331,1185],\
 # ------------------------------------------------------------------------------------ #
 @app.route("/EE/input",methods=['POST'])
 def startEconomicEvaluation():
-	DSO_CF = []
-	DSO_PV = []
+	# ----------------------------------- #
+	DSO_CF      = []
+	DSO_PV      = []
 	PROSUMER_CF = []
 	PROSUMER_PV = []
 	timeArray   = []
@@ -268,16 +265,15 @@ def startEconomicEvaluation():
 	dso_EssCapacity = 0
 	dso_EssLifetime = 0
 	# ----------------------------------- #
-
 	description = "[EconomicServer][HTTPS][POST] Economic Model Evaluation"
 	if(enablePrints == True):
 		print(str(description))
-
+	# ----------------------------------- #
 	# Receive and parse
 	try:					
 		req_data      = request.get_json() 
 
-		if(enableFullDebug == True):
+		if(enableFulldebug == True):
 			timestr = time.strftime("%Y%m%d-%H%M%S")
 			# -------------------------------------------------------------------------------------------------- #
 			# IMPROVED DEBUG:
@@ -305,11 +301,27 @@ def startEconomicEvaluation():
 		kwp                 = req_data['kwp']
 		pLoss               = req_data['kwh_losses']
 		batteryList         = req_data['ESS_info']
+		# ---------------------------------------------------------- #
+		# FURTHER CONTROLS ABOUT GIVEN INPUTS:
+		# ---------------------------------------------------------- #
+		# Numerical Input validation:
+		# ---------------------------------------------------------- #
+		if(isinstance(batteryList, list) != True):
+			raise ValueError('Wrong Input! ESS_info must be a list!')			
 		nss                 = len(batteryList) 
+		if(isinstance(kwp, (int, float, complex)) != True):
+			raise ValueError('Wrong Input! kwp must be a number!')			
+		if(isinstance(simulationTime, (int, float, complex)) != True):
+			raise ValueError('Wrong Input! simulationTime must be a number!')			
+		if(isinstance(pLoss, (int, float, complex)) != True):
+			raise ValueError('Wrong Input! kwh_losses must be a number!')			
+		if(isinstance(nss, (int, float, complex)) != True):
+			raise ValueError('Wrong Input! inherited number of ESS must be a number!')			
+
 		# ---------------------------------------------------------- #
 		# Need to calculate the PV penetration % (from kwp):
 		pvPerc = (kwp/KWpMax)
-		if(enableFullDebug == True):
+		if(enableFullPrints == True):
 			print("Request Received: content("+str(req_data) + ")")
 			print("idSimulation: " + str(idSimulation))
 			print("kwp    = "+str(kwp))
@@ -360,6 +372,13 @@ def startEconomicEvaluation():
 			i += 1
 
 		ScenarioID = -1
+
+	except Exception as e:
+		if(enablePrints == True):
+			print("[EconomicServer] S4G Service [Input] Error %s" %e)
+		return str("[EconomicServer] S4G Service [Input] Error %s" %e)
+
+	try:
 		# ---------------------------------------------------------- #
 		# Scenario 0: NumberESS = 0 and Nss = 0
 		# Scenario 1: NumberESS > 0 and Nss > 0 and Position = Residential only
@@ -376,7 +395,7 @@ def startEconomicEvaluation():
 			now = datetime.datetime.now()
 			year = now.year
 
-			if(enableFullDebug == True):
+			if(enableFullPrints == True):
 				print("simulatedBatteryData: ")
 				print(simulatedBatteryData)
 
@@ -385,7 +404,7 @@ def startEconomicEvaluation():
 
 			# Extract the proper value:
 			battSimulCost = elementRow[0][2]
-			if(enableFullDebug == True):
+			if(enableFullPrints == True):
 				print("BatterySimluatedCost: " +str(battSimulCost))
 
 			if(foundResidential == True and foundSubstation == False):
@@ -433,7 +452,7 @@ def startEconomicEvaluation():
 		if(enablePrints == True):
 			print("[EconomicServer] Identified Scenario: " +str(ScenarioID))
 
-		if(enableFullDebug == True):
+		if(enableFullPrints == True):
 			print("[EconomicServer] GS (Parameters): ")
 			print("[EconomicServer] a0: " + str(a0))
 			print("[EconomicServer] a1: " + str(a1))
@@ -453,7 +472,7 @@ def startEconomicEvaluation():
 		# Need to calculate the Grid Sthrenghtening Equivalent:
 		gse = b0 + b1*(kwp) + b2*((kwp)**2)
 
-		if(enableFullDebug == True):
+		if(enableFullPrints == True):
 			print("[EconomicServer] GS: " +str(gs))
 			print("[EconomicServer] GSE: " +str(gse))
 
@@ -465,7 +484,7 @@ def startEconomicEvaluation():
 		EconsumptionCost = Econsumption[ScenarioID] * Pen
 		CPwLoss = Pen * pLoss
 
-		if(enableFullDebug == True):
+		if(enableFullPrints == True):
 			print("[EconomicServer] CAPEX: " +str(CAPEX))
 			print("[EconomicServer] OPEX: " +str(OPEX))
 			print("[EconomicServer] Pen: " + str(Pen))
@@ -491,7 +510,7 @@ def startEconomicEvaluation():
 				if(x == 0):
 					DSO_CF.append(CAPEX + CPwLoss)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(CAPEX + CPwLoss))
 						print("DSO_PV["+str(x)+"]="+str(DSO_CF[x]/((1+r)**(x))))
 
@@ -506,7 +525,7 @@ def startEconomicEvaluation():
 					DSO_CF.append(OPEX + CPwLoss * pSharedPLoss)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(OPEX + CPwLoss * pSharedPLoss))
 						print("DSO_PV["+str(x)+"]="+str(DSO_CF[x]/((1+r)**(x))))
 
@@ -529,7 +548,7 @@ def startEconomicEvaluation():
 					DSO_CF.append(CAPEX + CPwLoss * pSharedPLoss)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
@@ -538,7 +557,7 @@ def startEconomicEvaluation():
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("PROSUMER_CF["+str(x)+"]="+str(PROSUMER_CF[x]))
 						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
 
@@ -546,7 +565,7 @@ def startEconomicEvaluation():
 					DSO_CF.append(OPEX + CPwLoss)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
@@ -558,7 +577,7 @@ def startEconomicEvaluation():
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("PROSUMER_CF["+str(x)+"]="+str(PROSUMER_CF[x]))
 						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
 		# ---------------------------------------------------------- #
@@ -573,14 +592,14 @@ def startEconomicEvaluation():
 					DSO_CF.append(tmpValue)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
 					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCostScenario0 * nhouse)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("PROSUMER_CF["+str(x)+"]="+str(PROSUMER_CF[x]))
 						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
 
@@ -593,14 +612,14 @@ def startEconomicEvaluation():
 					DSO_CF.append(tmpValue)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
 					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCostScenario0 * nhouse)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("PROSUMER_CF["+str(x)+"]="+str(PROSUMER_CF[x]))
 						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
 		# ---------------------------------------------------------- #
@@ -616,7 +635,7 @@ def startEconomicEvaluation():
 					DSO_CF.append(tmpValue)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
@@ -626,7 +645,7 @@ def startEconomicEvaluation():
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("PROSUMER_CF["+str(x)+"]="+str(PROSUMER_CF[x]))
 						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
 
@@ -640,7 +659,7 @@ def startEconomicEvaluation():
 					DSO_CF.append(tmpValue)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 					# ------------------------------------------------------------------------------------ #
@@ -652,14 +671,14 @@ def startEconomicEvaluation():
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
-					if(enableFullDebug == True):
+					if(enableFullPrints == True):
 						print("PROSUMER_CF["+str(x)+"]="+str(PROSUMER_CF[x]))
 						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
 
 	except Exception as e:
 		if(enablePrints == True):
-			print("[EconomicServer] S4G Service [Starting Simulation] Error %s" %e)
-		return str("[EconomicServer] S4G Service [Starting Simulation] Error %s" %e)
+			print("[EconomicServer] S4G Service [Starting Economic Evaluation] Error %s" %e)
+		return str("[EconomicServer] S4G Service [Starting Economic Evaluation] Error %s" %e)
 
 	# -------------------- #
 	TCO_DSO        = sum(DSO_PV)
@@ -697,14 +716,10 @@ if __name__ == "__main__":
 	print((sys.version_info))
 	print("Storage4Grid EU Project: Implementation of EconomicServer Backend")
 	print("[EconomicServer-Backend] Restoring back the Server configuration")
-
-	badStart = False
-	# --------------------------------------------------------------------------- #
-	if(badStart == False):
-		print("[EconomicServer-Backend] Starting REST Server")
-		if(localDebugHTTP == True):
-			print("[EconomicServer-Backend] DEBUGGING MODE! ONLY FOR LOCAL PURPOSES!")
-			app.run(host='0.0.0.0', port=9082) # HTTP
-		else:
-			print("[EconomicServer-Backend] PRODUCTION MODE!") # HTTPS
-			app.run(ssl_context=('ssl/nginx-selfsigned.crt', 'ssl/nginx-selfsigned.key'), port=9082)
+	print("[EconomicServer-Backend] Starting REST Server")
+	if(localDebugHTTP == True):
+		print("[EconomicServer-Backend] DEBUGGING MODE! ONLY FOR LOCAL PURPOSES!")
+		app.run(host='0.0.0.0', port=9082) # HTTP
+	else:
+		print("[EconomicServer-Backend] PRODUCTION MODE!") # HTTPS
+		app.run(ssl_context=('ssl/nginx-selfsigned.crt', 'ssl/nginx-selfsigned.key'), port=9082)
