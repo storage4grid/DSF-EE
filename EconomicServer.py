@@ -700,11 +700,11 @@ def startEconomicEvaluation():
 		return str("[EconomicServer] S4G Service [Starting Economic Evaluation] Error %s" %e)
 
 	# -------------------- #
+	# Final Results:
+	# -------------------- #
 	TCO_DSO        = sum(DSO_PV)
 	TCO_PROSUMER   = sum(PROSUMER_PV)	
-	# TCO_COMMUNITY = TCO_DSO + TCO_PROSUMER
 	TCO_COMMUNITY  = TCO_DSO + TCO_PROSUMER
-	# TCO_DIFFERENCE = TCO_COMMUNITY - TCO_DSO
 	TCO_DIFFERENCE = TCO_COMMUNITY - TCO_DSO
 	# -------------------- #
 	if(enablePrints == True):
