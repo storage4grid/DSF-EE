@@ -134,7 +134,7 @@ app = Flask(__name__)
 localDebugHTTP   = True         # Required for building local python app (not inside docker) in HTTP or HTTPS
 # ------------------------------------------------------------------------------------ #
 enablePrints     = True
-enableFullPrints = False
+enableFullPrints = True
 enableFulldebug  = False
 # ------------------------------------------------------------------------------------ #
 @app.route("/")
@@ -171,6 +171,13 @@ r = 0.07
 Pen = 0.31
 # Number of Households:
 nhouse = 15
+# nhouse = 20
+
+
+# TODO: NOTE: Scenario 2
+# [EconomicServer] TCO(DSO): -14762622.02293773
+
+
 # Fixed cost amount (Scenario1):
 fixed_cost = 9000
 
@@ -310,7 +317,9 @@ def startEconomicEvaluation():
 			raise ValueError('Wrong Input! ESS_info must be a list!')			
 		nss                 = len(batteryList) 
 		if(isinstance(kwp, (int, float, complex)) != True):
-			raise ValueError('Wrong Input! kwp must be a number!')			
+			raise ValueError('Wrong Input! kwp must be a number!')
+		if(kwp > KWpMax):
+			raise ValueError('Given kwp value is too high! [' +str(kwp) +']>['+str(KWpMax)+']')
 		if(isinstance(simulationTime, (int, float, complex)) != True):
 			raise ValueError('Wrong Input! simulationTime must be a number!')			
 		if(isinstance(pLoss, (int, float, complex)) != True):
@@ -520,6 +529,11 @@ def startEconomicEvaluation():
 					else:
 						PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost * nhouse)
 						PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
+
+					if(enableFullPrints == True):
+						print("PROSUMER_CF["+str(x)+"]="+str(PROSUMER_CF[x]))
+						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
+
 				else:
 
 					DSO_CF.append(OPEX + CPwLoss * pSharedPLoss)
@@ -535,6 +549,11 @@ def startEconomicEvaluation():
 					else:
 						PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost * nhouse)
 						PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
+
+					if(enableFullPrints == True):
+						print("PROSUMER_CF["+str(x)+"]="+str(PROSUMER_CF[x]))
+						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
+
   
 		elif(ScenarioID == 1):
 			if(enablePrints == True):
@@ -682,15 +701,21 @@ def startEconomicEvaluation():
 
 	# -------------------- #
 	TCO_DSO        = sum(DSO_PV)
-	TCO_PROSUMER   = sum(PROSUMER_PV)
-	TCO_AGGREGATED = TCO_PROSUMER - TCO_DSO
+	TCO_PROSUMER   = sum(PROSUMER_PV)	
+	# TCO_COMMUNITY = TCO_DSO + TCO_PROSUMER
+	TCO_COMMUNITY  = TCO_DSO + TCO_PROSUMER
+	# TCO_DIFFERENCE = TCO_COMMUNITY - TCO_DSO
+	TCO_DIFFERENCE = TCO_COMMUNITY - TCO_DSO
 	# -------------------- #
 	if(enablePrints == True):
 		print("[EconomicServer] Identified Scenario: [" + str(ScenarioID) + "]")
 		print("[EconomicServer] Identified Scenario: [" + str(scenarioDescription[ScenarioID]) + "]")
-		print("[EconomicServer] TCO(DSO): " + str(TCO_DSO))
-		print("[EconomicServer] TCO(AGGREGATED): " + str(TCO_AGGREGATED))
-		print("[EconomicServer] TCO(PROSUMER): " + str(TCO_PROSUMER))
+		print("[EconomicServer] TCO(DSO): "        + str(TCO_DSO))
+		print("[EconomicServer] TCO(PROSUMER): "   + str(TCO_PROSUMER))
+		print("[EconomicServer] TCO(DIFFERENCE): " + str(TCO_DIFFERENCE))
+		print("[EconomicServer] TCO(COMMUNITY): "  + str(TCO_COMMUNITY))
+		# To build the incentive we should store the simulation results... deprecated!
+		# print("[EconomicServer] Incentive: "  + str())
 
 	# -------------------- #
 	# Must Return a JSON:
@@ -699,12 +724,12 @@ def startEconomicEvaluation():
 	#"scenario_id":1,
 	#"scenario_name":"AA",
 	#"TCO_DSO":10,
-	#"TCO_Aggregated":110,
+	#"TCO_Difference":110,
 	#"TCO_Community":90
 	#}
 	# -------------------- #
 	result = {"simulation_id":idSimulation,"scenario_id":ScenarioID,"scenario_name":str(scenarioDescription[ScenarioID]),\
-		 "TCO_DSO":TCO_DSO,"TCO_Aggregated":TCO_AGGREGATED,"TCO_Community":TCO_PROSUMER}
+		 "TCO_DSO":TCO_DSO,"TCO_Difference":TCO_DIFFERENCE,"TCO_Community":TCO_COMMUNITY}
 	# -------------------- #
 	return json.dumps(result)
 
