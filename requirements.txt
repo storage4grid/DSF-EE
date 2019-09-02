@@ -6,3 +6,4 @@ MarkupSafe==1.0
 uWSGI==2.0.17.1
 Werkzeug==0.14.1
 paho-mqtt==1.4.0
+flask-cors

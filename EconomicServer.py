@@ -128,7 +128,12 @@ sys.path.insert(0, os.path.join(base_path, 'lib'))
 # * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
 # * Restarting with stat
 # ------------------------------------------------------------------------------------ #
+# To enable CROSS-ORIGIN Requests (CORS): 09/2019
+from flask_cors import CORS
+# Original Flask run
 app = Flask(__name__)
+# Enable CORS
+CORS(app)
 # ------------------------------------------------------------------------------------ #
 # TODO: VERIFY VERY WELL THE FOLLOWING FLAGS BEFORE BUILDING!
 localDebugHTTP   = False        # Required for building local python app (not inside docker) in HTTP or HTTPS
