@@ -131,10 +131,10 @@ sys.path.insert(0, os.path.join(base_path, 'lib'))
 app = Flask(__name__)
 # ------------------------------------------------------------------------------------ #
 # TODO: VERIFY VERY WELL THE FOLLOWING FLAGS BEFORE BUILDING!
-localDebugHTTP   = True         # Required for building local python app (not inside docker) in HTTP or HTTPS
+localDebugHTTP   = False        # Required for building local python app (not inside docker) in HTTP or HTTPS
 # ------------------------------------------------------------------------------------ #
-enablePrints     = True
-enableFullPrints = True
+enablePrints     = False
+enableFullPrints = False
 enableFulldebug  = False
 # ------------------------------------------------------------------------------------ #
 @app.route("/")
