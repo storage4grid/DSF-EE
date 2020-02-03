@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+# Copyright 2019 Ligios Michele <michele.ligios@linksfoundation.com>
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 '''
 * ------------------------------------------------------------------------------------------------- *
 * !!!WARNING ABOUT DEVELOPMENT!!!
@@ -31,11 +44,21 @@
 * ------------------------------------------------------------------------------------------------- *
 * sudo docker build . -t economicserverimage
 *
-* BASE (No MQTT support due to databroker embedded inside docker fs of the same host):
+* BASE:
 * sudo docker run --name economicserver -p 9082:9081 -d economicserverimage
 *
-* ADVANCED (attach to the already present network and link to mosquitto to enable MQTT communication):
-* sudo docker run --name economicserver --network=12_default --link mqtt:databroker -p 9082:9081 -d economicserverimage
+* Obtain certificates first (DEPRECATED, it exploits old authentication mechanism):
+* sudo docker run --rm -it -v "/root/letsencrypt/log:/var/log/letsencrypt" -v "/var/www/html/shared:/var/www/" -v "/etc/letsencrypt:/etc/letsencrypt" -v "/root/letsencrypt/lib:/var/lib/letsencrypt" lojzik/letsencrypt certonly --webroot --webroot-path /var/www --email michele.ligios@linksfoundation.com -d dwh.storage4grid.eu
+*
+* Renew certificates (DEPRECATED, it exploits old authentication mechanism):
+* sudo docker run --rm -v "/root/letsencrypt/log:/var/log/letsencrypt" -v "/var/www/html/shared:/var/www/" -v "/etc/letsencrypt:/etc/letsencrypt" -v "/root/letsencrypt/lib:/var/lib/letsencrypt" lojzik/letsencrypt renew
+*
+* Cron rule to renew certificates:
+* 0 0 * * * docker run --rm -v "/root/letsencrypt/log:/var/log/letsencrypt" -v "/var/www/html/shared:/var/www/" -v "/etc/letsencrypt:/etc/letsencrypt" -v "/root/letsencrypt/lib:/var/lib/letsencrypt" lojzik/letsencrypt renew >> /var/log/certbot.log 2>&1 && service nginx reload >> /var/log/certbot.log 2>&1
+*
+*
+* ADVANCED (VOLUMES with Certificates):
+* sudo docker run --name economicserver -v "/root/letsencrypt/log:/var/log/letsencrypt" -v "/var/www/html/shared:/var/www/" -v "/etc/letsencrypt:/etc/letsencrypt" -v "/root/letsencrypt/lib:/var/lib/letsencrypt" -p 9082:9081 -d economicserverimage
 *
 * CERTIFICATES GENERATION (CN value must be the same as for the FDQN)
 * sudo openssl req -x509 -nodes -days 565 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt
@@ -44,7 +67,7 @@
 * !!! DEBUG INSTRUCTIONS !!!
 * ------------------------------------------------------------------------------------------------- *
 * Show certificate property
-* curl -k -v https://dwh.storage4grid.eu:9082/
+* curl -k -v https://ip:9082/
 * curl --insecure -v https://www.google.com 2>&1 | awk 'BEGIN { cert=0 } /^\* Server certificate:/ { cert=1 } /^\*/ { if (cert) print }'
 * curl --cacert mycompany.cert  https://www.mycompany.com
 * ------------------------------------------------------------------------------------------------- *
@@ -52,10 +75,9 @@
 * ---------------------------------------------------------------------------------------------------------------
 * Simple REST server for Python (3). Built to be multithreaded together with nginx and uwsgi.
 * ---------------------------------------------------------------------------------------------------------------
-* @Version 0.0.1
+* @Version 1.1.2
 *                                           Storage4Grid EU Project
 *                                      Implementation of Economic Server Connector
-*                                          on server 130.192.86.144
 * @Notes:
 * ---------------------------------------------------------------------------------------------------------------
 * The current Backend will interact with Professional GUI and with the DSF-SE to:
@@ -99,6 +121,7 @@
 * @Author: Ligios Michele
 * @Created: 2019-06-11
 * @Updated: 2019-07-17
+* @update final
 '''
 # ------------------------------------------------------------------------------------ #
 # Generic Libraries:
@@ -109,11 +132,8 @@ from flask import Flask, request
 import configparser
 import time
 import sqlite3
-
 import datetime
 
-# ------------------------------------------------------------------------------------ #
-import paho.mqtt.client as mqtt
 # ------------------------------------------------------------------------------------ #
 # Import libraries in lib directory
 base_path = os.path.dirname(__file__)
@@ -135,12 +155,12 @@ app = Flask(__name__)
 # Enable CORS
 CORS(app)
 # ------------------------------------------------------------------------------------ #
-# TODO: VERIFY VERY WELL THE FOLLOWING FLAGS BEFORE BUILDING!
-localDebugHTTP   = False        # Required for building local python app (not inside docker) in HTTP or HTTPS
+# VERIFY VERY WELL THE FOLLOWING FLAGS BEFORE BUILDING!
+localDebugHTTP   = True        # Required for building local python app (not inside docker) in HTTP or HTTPS
 # ------------------------------------------------------------------------------------ #
-enablePrints     = False
-enableFullPrints = False
-enableFulldebug  = False
+enablePrints     = True
+enableFullPrints = True
+enableFulldebug  = True
 # ------------------------------------------------------------------------------------ #
 @app.route("/")
 def home():
@@ -165,33 +185,87 @@ b2 = a2
 # ------------------------------------------------------------------------------------ #
 # Range of allowded values for kwp (required to define the PV penetration %):
 KWpMax = 150
-Econsumption = [2500,1200,2500,800]
+Econsumption = [2500,1200,2500,800] # Deprecated (indifferente rispetto allo scenario)
+
+# EconsumptionCost = Econsumption[ScenarioID] * Pen (DEPRECATED)
+# EconsumptionCost_PV = Econsumption[location]_PV * Pen
+# EconsumptionCost_without_PV = Econsumption[location]_without_PV * Pen  
+EconsumptionCost_PV         = 0
+EconsumptionCost_without_PV = 0
+
 # ------------------------------------------------------------------------------------ #
 # These values Must be shared among the Scenarios:
 # Percentage of shared Power Loss (50%)
 pSharedPLoss = 0.5
 # R Percentage (7%): 
 r = 0.07
-# Power en:
-Pen = 0.31
+# ------------------------------------------------------------------------------------ #
+# Generic values (DEPRECATED)
+# Price energy:
+# Pen = 0.31
+Pen = 0
 # Number of Households:
-nhouse = 15
+# nhouse = 15
+nhouse = 0
 # nhouse = 20
-
-
-# TODO: NOTE: Scenario 2
-# [EconomicServer] TCO(DSO): -14762622.02293773
-
-
 # Fixed cost amount (Scenario1):
-fixed_cost = 9000
+# fixed_cost = 9000 # Deprecated
+fixed_cost = 0
+
+# Burocracy change based on scenario (instead of country)
+# real_burocracy_cost = (290,6 * ESS_avg_capacity_res)*num_ess_res + (290,6 * ESS_avg_capacity_sub)*num_ess_sub
+burocracy = 290.6
+# ------------------------------------------------------------------------------------ #
+# Legend:
+# CF = Cash Flow
+# PV = Present Value
+# ------------------------------------------------------------------------------------ #
+# Minimum years to be considered for an economical simulation
+# simulationThreshold = 5 (DEPRECATED)
+# ------------------------------------------------------------------------------------ #
+# Updated pilot-specific values (Italy):
+# Price energy:
+penIt = 0.21
+# Number of Households:
+nhouseIt = 21
+# Fixed cost amount:
+# fixed_costIt = 9000 # Deprecated
+# ------------------------------------------------------------------------------------ #
+# Average of Power Consumption (Italy):
+# EconsumptionIt = avgP_house_pvIt * nhousePvIt + avgP_house_WithoutpvIt * nhouseWithoutPvIt
+# A seconda del valore del PV penetration nella offline simulation
+# calcolo avgP_house_pvIt interpolando i valori di ogni scenario
+# Senza PV per IT: consumo medio: 
+# Con PV: 
+avgP_house_pvIt        = 0
+avgP_house_WithoutpvIt = 0
+EconsumptionIt         = 0
 
 # ------------------------------------------------------------------------------------ #
+# Updated pilot-specific values (Denmark):
+# Price energy:
+penDk = 0.31
+# Number of Households:
+nhouseDk = 15
+# Fixed cost amount:
+# fixed_costDk = 9000 # Deprecated
+# Average of Power Consumption:
+# EconsumptionDk = avgP_house_pvDk * nhousePvDk + avgP_house_WithoutpvDk * nhouseWithoutPvDk 
+# Senza PV per Fur: consumo medio: 5218
+# Con PV: 1750
+avgP_house_pvDk        = 1750
+avgP_house_WithoutpvDk = 5218
+EconsumptionDk         = 0
+# ------------------------------------------------------------------------------------ #
+yearly_tco             = 0
+# ------------------------------------------------------------------------------------ #
+debugExtension = ".json"
+# ------------------------------------------------------------------------------------ #
 # Allowed Scenario: [0,1,2,3]
-scenarioDescription = ["Grid Strenghtening",\
-			"Decentralized Storage at houhold level",\
-			"Centralized Storage at Sub-station level",\
-			"Both centralized and decentralized storage"]
+scenarioDescription = ["Scenario 0: Traditional Grid Strengthening (Baseline)",\
+			"Scenario 1: Decentralized Storage at household level",\
+			"Scenario 2: Centralized Storage at Sub-station level",\
+			"Scenario 3: Both centralized and decentralized storage"]
 # ------------------------------------------------------------------------------------ #
 kwp     = 0
 pLoss   = 0
@@ -272,6 +346,8 @@ def startEconomicEvaluation():
 	timeArray   = []
 	batteryList = []
 	# ----------------------------------- #
+	simulationTimeUpdate = 0
+	# ----------------------------------- #
 	residential_EssCapacity = 0
 	residential_EssLifetime = 0
 	dso_EssCapacity = 0
@@ -306,9 +382,12 @@ def startEconomicEvaluation():
 
 		# -------------------------------------------------------------------------------------------------- #
 		idSimulation        = req_data['simulation_id']
-		locationSimulation  = req_data['grid_name']
+		locationSimulation  = req_data['grid_name'].lower()
 		# ---------------------------------------------------------- #
 		simulationTime      = req_data['simulation_time']
+		# ---------------------------------------------------------- #
+		nhousePV            = req_data['houses_with_pv']
+		houses_without_pv   = req_data['houses_without_pv']
 		# ---------------------------------------------------------- #
 		kwp                 = req_data['kwp']
 		pLoss               = req_data['kwh_losses']
@@ -320,17 +399,26 @@ def startEconomicEvaluation():
 		# ---------------------------------------------------------- #
 		if(isinstance(batteryList, list) != True):
 			raise ValueError('Wrong Input! ESS_info must be a list!')			
-		nss                 = len(batteryList) 
+		nss = len(batteryList) 
+		if(isinstance(nhousePV, (int)) != True):
+			raise ValueError('Wrong Input! houses_with_pv must be a number!')
+		if(isinstance(houses_without_pv, (int)) != True):
+			raise ValueError('Wrong Input! houses_without_pv must be a number!')
 		if(isinstance(kwp, (int, float, complex)) != True):
 			raise ValueError('Wrong Input! kwp must be a number!')
 		if(kwp > KWpMax):
 			raise ValueError('Given kwp value is too high! [' +str(kwp) +']>['+str(KWpMax)+']')
-		if(isinstance(simulationTime, (int, float, complex)) != True):
+		if(isinstance(simulationTime, (int)) != True):
 			raise ValueError('Wrong Input! simulationTime must be a number!')			
 		if(isinstance(pLoss, (int, float, complex)) != True):
 			raise ValueError('Wrong Input! kwh_losses must be a number!')			
 		if(isinstance(nss, (int, float, complex)) != True):
 			raise ValueError('Wrong Input! inherited number of ESS must be a number!')			
+
+		# ---------------------------------------------------------- #
+		if(int(simulationTime) < 1):
+			raise ValueError('Wrong Input! Simulation Time lower Limit is 1 year')						
+
 
 		# ---------------------------------------------------------- #
 		# Need to calculate the PV penetration % (from kwp):
@@ -394,17 +482,20 @@ def startEconomicEvaluation():
 
 	try:
 		# ---------------------------------------------------------- #
-		# Scenario 0: NumberESS = 0 and Nss = 0
-		# Scenario 1: NumberESS > 0 and Nss > 0 and Position = Residential only
-		# Scenario 2: NumberESS > 0 and Nss > 0 and Position = Substation only
-		# Scenario 3: NumberESS > 0 and Nss > 0 and Position = Both
+		# Scenario 0: NumberESS = 0 and nss = 0
+		# Scenario 1: NumberESS > 0 and nss > 0 and Position = Residential only
+		# Scenario 2: NumberESS > 0 and nss > 0 and Position = Substation only
+		# Scenario 3: NumberESS > 0 and nss > 0 and Position = Both
 		# ---------------------------------------------------------- #
 		now = datetime.datetime.now()
 		year = now.year
 
-		if(len(batteryList) == 0 and nss == 0):
+		# if(len(batteryList) == 0 and nss == 0):
+		if(nss == 0):
 			ScenarioID = 0
-		elif(len(batteryList) > 0 and nss > 0):
+			simulationTimeUpdate = 20
+		# elif(len(batteryList) > 0 and nss > 0):
+		elif(nss > 0):
 			# Requried to find the proper row of BatteryCosts Structure:
 			now = datetime.datetime.now()
 			year = now.year
@@ -427,6 +518,7 @@ def startEconomicEvaluation():
 				avg_res_EssCapacity = avg_res_EssCapacity/resCounter
 				avg_res_EssLifetime = avg_res_EssLifetime/resCounter
 				residential_capexSize = battSimulCost*avg_res_EssCapacity
+				simulationTimeUpdate  = avg_res_EssLifetime
 				# ------------------------------------------------------------- #
 			elif(foundResidential == False and foundSubstation == True):
 				ScenarioID = 2
@@ -434,6 +526,7 @@ def startEconomicEvaluation():
 				avg_dso_EssCapacity = avg_dso_EssCapacity/dsoCounter
 				avg_dso_EssLifetime = avg_dso_EssLifetime/dsoCounter
 				dso_capexSize = battSimulCost*avg_dso_EssCapacity
+				simulationTimeUpdate  = avg_dso_EssLifetime
 				# ------------------------------------------------------------- #
 			elif(foundResidential == True and foundSubstation == True):
 				ScenarioID = 3
@@ -446,6 +539,8 @@ def startEconomicEvaluation():
 				residential_capexSize = battSimulCost*avg_res_EssCapacity
 				dso_capexSize         = battSimulCost*avg_dso_EssCapacity
 				# ------------------------------------------------------------- #
+				avg_lifetimes = (avg_res_EssLifetime+avg_dso_EssLifetime)/2
+				simulationTimeUpdate = avg_lifetimes
 			else:
 				if(enablePrints == True):
 					print("[EconomicServer] S4G Service [Starting Simulation] Error")
@@ -465,6 +560,38 @@ def startEconomicEvaluation():
 
 		if(enablePrints == True):
 			print("[EconomicServer] Identified Scenario: " +str(ScenarioID))
+
+
+		# ---------------------------------------------------------- #
+		# Conversion of values from FIT GUI tecnical simulation
+		# to Economic Model Timeframe of interest
+		# From x days to 1 year:
+		# ---------------------------------------------------------- #
+		# TODO: IF IT IS NEEDED TO CONVERT PLOSS:
+		# convertedPLoss = (pLoss*365)/simulationTime
+		convertedPLoss = pLoss
+		# ---------------------------------------------------------- #
+		# Update simulation time exploited by EE with the AVG ESS lifetime
+		# pLoss = convertedPLoss
+		simulationTime = int(simulationTimeUpdate)
+		# ---------------------------------------------------------- #
+		# TODO: conversion of values from generic to pilot specific
+		if(locationSimulation == "skive" or locationSimulation == "fur"):
+			Pen = penDk
+			nhouse = nhouseDk
+			EconsumptionDk = avgP_house_pvDk * nhousePV + avgP_house_WithoutpvDk * houses_without_pv 
+			Econsumption   = EconsumptionDk
+		elif(locationSimulation == "bolzano"):
+			Pen = penIt
+			nhouse = nhouseIt
+			EconsumptionIt = avgP_house_pvIt * nhousePV + avgP_house_WithoutpvIt * houses_without_pv 
+			Econsumption   = EconsumptionDk
+		else:
+			print("[EconomicServer] S4G Unknown Location Provided "+str(locationSimulation))
+			return str("[EconomicServer] S4G Unknown Location Provided "+str(locationSimulation))
+		# ---------------------------------------------------------- #
+		real_burocracy_cost = (burocracy * avg_res_EssCapacity) * resCounter + (burocracy * avg_dso_EssCapacity) * dsoCounter
+		fixed_cost = real_burocracy_cost
 
 		if(enableFullPrints == True):
 			print("[EconomicServer] GS (Parameters): ")
@@ -495,8 +622,13 @@ def startEconomicEvaluation():
 		OPEX  = 0.02*CAPEX
 
 		# ---------------------------------------------------------- #
-		EconsumptionCost = Econsumption[ScenarioID] * Pen
-		CPwLoss = Pen * pLoss
+		# DEPRECATED
+		# EconsumptionCost = Econsumption[ScenarioID] * Pen
+		EconsumptionCost = Econsumption * Pen
+
+		# TODO: Understand if the given Power Loss has to be converted!!!!
+		# CPwLoss = Pen * pLoss
+		CPwLoss = Pen * convertedPLoss
 
 		if(enableFullPrints == True):
 			print("[EconomicServer] CAPEX: " +str(CAPEX))
@@ -505,11 +637,13 @@ def startEconomicEvaluation():
 			print("[EconomicServer] PLoss: " + str(pLoss))
 			print("[EconomicServer] EconsumptionCost: " +str(EconsumptionCost))
 			print("[EconomicServer] CPwLoss: " +str(CPwLoss))
+			print("[EconomicServer] simulationTime: " +str(simulationTime))
 
 		# ---------------------------------------------------------- #
 		# Common values for each Scenario built until now:
 		# ---------------------------------------------------------- #
-		EconsumptionCostScenario0 = Econsumption[0] * Pen
+		# DEPRECATED
+		# EconsumptionCostScenario0 = Econsumption[0] * Pen 
 
 		# ---------------------------------------------------------- #
 		# Now it is required to build up the Tables
@@ -522,7 +656,8 @@ def startEconomicEvaluation():
 
 			for x in timeArray:
 				if(x == 0):
-					DSO_CF.append(CAPEX + CPwLoss)
+					# DSO_CF.append(CAPEX + CPwLoss)
+					DSO_CF.append(CAPEX + CPwLoss * pSharedPLoss)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 					if(enableFullPrints == True):
 						print("DSO_CF["+str(x)+"]="+str(CAPEX + CPwLoss))
@@ -532,7 +667,9 @@ def startEconomicEvaluation():
 						PROSUMER_CF.append(0)
 						PROSUMER_PV.append(0)
 					else:
-						PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost * nhouse)
+						# PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost * nhouse)
+						# PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV))
+						PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv)
 						PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
 					if(enableFullPrints == True):
@@ -552,7 +689,9 @@ def startEconomicEvaluation():
 						PROSUMER_CF.append(0)
 						PROSUMER_PV.append(0)
 					else:
-						PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost * nhouse)
+						# PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost * nhouse)
+						# PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV))
+						PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv)
 						PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
 					if(enableFullPrints == True):
@@ -576,8 +715,10 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
-					tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + (nss * EconsumptionCost) + ( nhouse - nss ) * (EconsumptionCostScenario0)
-					
+					# tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + (nss * EconsumptionCost) + ( nhouse - nss ) * (EconsumptionCostScenario0)
+					# tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV)				
+					tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv				
+
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
@@ -593,10 +734,24 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
-					if((x % avg_res_EssLifetime) == 0):  
-						tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + (nss * EconsumptionCost) + ( nhouse - nss ) * (EconsumptionCostScenario0)
+					if((x % avg_res_EssLifetime) == 0):
+						# TODO:
+						# Here we need to repeat the estimation of the residential_capexSize 
+						# by exploiting the estimated cost for that specific year:
+						# Extract the estimation built about the current year:
+						# elementRow = [z for z in simulatedBatteryData if z[0] == (year+x)]
+						# Extract the proper value:
+						# battSimulCost = elementRow[0][2]    
+						# residential_capexSize = battSimulCost*avg_res_EssCapacity
+
+						# tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + (nss * EconsumptionCost) + ( nhouse - nss ) * (EconsumptionCostScenario0)
+						# tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV)
+						tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv
+
 					else:
-						tmpValue = CPwLoss * pSharedPLoss + nss * EconsumptionCost + (nhouse - nss) * EconsumptionCostScenario0
+						# tmpValue = CPwLoss * pSharedPLoss + nss * EconsumptionCost + (nhouse - nss) * EconsumptionCostScenario0
+						# tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV)
+						tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv
 
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
@@ -620,7 +775,9 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
-					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCostScenario0 * nhouse)
+					# PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCostScenario0 * nhouse)
+					# PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV))
+					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
 					if(enableFullPrints == True):
@@ -628,7 +785,16 @@ def startEconomicEvaluation():
 						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
 
 				else:
-					if((x % avg_dso_EssLifetime) == 0):  
+					if((x % avg_dso_EssLifetime) == 0):
+						# TODO:
+						# Here we need to repeat the estimation of the dso_capexSize 
+						# by exploiting the estimated cost for that specific year:
+						# Extract the estimation built about the current year:
+						# elementRow = [z for z in simulatedBatteryData if z[0] == (year+x)]
+						# Extract the proper value:
+						# battSimulCost = elementRow[0][2]    
+						# dso_capexSize = battSimulCost*avg_dso_EssCapacity
+  
 						tmpValue = (nss * dso_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + (CAPEX + OPEX)
 					else:
 						tmpValue = (pSharedPLoss * CPwLoss) + (OPEX)
@@ -640,7 +806,9 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
-					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCostScenario0 * nhouse)
+					# PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCostScenario0 * nhouse)
+					# PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV))
+					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
 					if(enableFullPrints == True):
@@ -664,7 +832,10 @@ def startEconomicEvaluation():
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
 					# ------------------------------------------------------------------------------------ #
-					tmpValue = (avg_res_EssLifetime * residential_capexSize * ( 1 + prudentAverageBatteries )**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost * resCounter + (nhouse - resCounter) * EconsumptionCostScenario0
+					# tmpValue = (avg_res_EssLifetime * residential_capexSize * ( 1 + prudentAverageBatteries )**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost * resCounter + (nhouse - resCounter) * EconsumptionCostScenario0
+					# tmpValue = (resCounter * residential_capexSize * ( 1 + prudentAverageBatteries )**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost * resCounter + (nhouse - resCounter) * EconsumptionCostScenario0
+					# tmpValue = (resCounter * residential_capexSize * ( 1 + prudentAverageBatteries )**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV)
+					tmpValue = (resCounter * residential_capexSize * ( 1 + prudentAverageBatteries )**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv
 					# ------------------------------------------------------------------------------------ #
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
@@ -675,7 +846,15 @@ def startEconomicEvaluation():
 
 					# ------------------------------------------------------------------------------------ #
 				else:
-					if((x % avg_dso_EssLifetime) == 0): 
+					if((x % avg_dso_EssLifetime) == 0):
+						# TODO:
+						# Here we need to repeat the estimation of the dso_capexSize 
+						# by exploiting the estimated cost for that specific year:
+						# Extract the estimation built about the current year:
+						# elementRow = [z for z in simulatedBatteryData if z[0] == (year+x)]
+						# Extract the proper value:
+						# battSimulCost = elementRow[0][2]    
+						# dso_capexSize = battSimulCost*avg_dso_EssCapacity
 						tmpValue = (dsoCounter * dso_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + pSharedPLoss*CPwLoss + (CAPEX + OPEX)
 					else:
 						tmpValue = (pSharedPLoss * CPwLoss) + (OPEX)
@@ -687,10 +866,25 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 					# ------------------------------------------------------------------------------------ #
-					if((x % avg_res_EssLifetime) == 0): 
-						tmpValue = (avg_res_EssLifetime * residential_capexSize * (1 + prudentAverageBatteries)**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost * resCounter + (nhouse - resCounter) * EconsumptionCostScenario0
+					if((x % avg_res_EssLifetime) == 0):
+						# TODO:
+						# Here we need to repeat the estimation of the residential_capexSize 
+						# by exploiting the estimated cost for that specific year:
+						# Extract the estimation built about the current year:
+						# elementRow = [z for z in simulatedBatteryData if z[0] == (year+x)]
+						# Extract the proper value:
+						# battSimulCost = elementRow[0][2]    
+						# residential_capexSize = battSimulCost*avg_res_EssCapacity
+
+						# tmpValue = (avg_res_EssLifetime * residential_capexSize * (1 + prudentAverageBatteries)**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost * resCounter + (nhouse - resCounter) * EconsumptionCostScenario0
+						# tmpValue = (resCounter * residential_capexSize * (1 + prudentAverageBatteries)**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost * resCounter + (nhouse - resCounter) * EconsumptionCostScenario0
+						# tmpValue = (resCounter * residential_capexSize * (1 + prudentAverageBatteries)**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV)
+						tmpValue = (resCounter * residential_capexSize * (1 + prudentAverageBatteries)**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv
+
 					else:
-						tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost * resCounter + (nhouse - resCounter) * EconsumptionCostScenario0
+						# tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost * resCounter + (nhouse - resCounter) * EconsumptionCostScenario0
+						# tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * (nhouse - nhousePV)
+						tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv
 					# ------------------------------------------------------------------------------------ #
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
@@ -710,15 +904,15 @@ def startEconomicEvaluation():
 	TCO_DSO        = sum(DSO_PV)
 	TCO_PROSUMER   = sum(PROSUMER_PV)	
 	TCO_COMMUNITY  = TCO_DSO + TCO_PROSUMER
-	TCO_DIFFERENCE = TCO_COMMUNITY - TCO_DSO
+	# TCO_DIFFERENCE = TCO_COMMUNITY - TCO_DSO # DEPRECATED
 	# -------------------- #
 	if(enablePrints == True):
 		print("[EconomicServer] Identified Scenario: [" + str(ScenarioID) + "]")
 		print("[EconomicServer] Identified Scenario: [" + str(scenarioDescription[ScenarioID]) + "]")
-		print("[EconomicServer] TCO(DSO): "        + str(TCO_DSO))
-		print("[EconomicServer] TCO(PROSUMER): "   + str(TCO_PROSUMER))
-		print("[EconomicServer] TCO(DIFFERENCE): " + str(TCO_DIFFERENCE))
-		print("[EconomicServer] TCO(COMMUNITY): "  + str(TCO_COMMUNITY))
+		print("[EconomicServer] TCO(DSO): "        + str(int(TCO_DSO))
+		print("[EconomicServer] TCO(HOUSEHOLDS): "   + str(int(TCO_PROSUMER)))
+		# print("[EconomicServer] TCO(DIFFERENCE): " + str(int(TCO_DIFFERENCE)))
+		print("[EconomicServer] TCO(COMMUNITY): "  + str(int(TCO_COMMUNITY)))
 		# To build the incentive we should store the simulation results... deprecated!
 		# print("[EconomicServer] Incentive: "  + str())
 
@@ -733,8 +927,19 @@ def startEconomicEvaluation():
 	#"TCO_Community":90
 	#}
 	# -------------------- #
+	#result = {"simulation_id":idSimulation,"scenario_id":ScenarioID,"scenario_name":str(scenarioDescription[ScenarioID]),\
+	#	 "TCO_DSO":TCO_DSO,"TCO_Difference":TCO_DIFFERENCE,"TCO_Community":TCO_COMMUNITY}
+	# -------------------- #
+	# Before 2020-02-03
+	# result = {"simulation_id":idSimulation,"scenario_id":ScenarioID,"scenario_name":str(scenarioDescription[ScenarioID]),\
+	#	 "TCO_DSO":TCO_DSO,"TCO_Households":TCO_PROSUMER,"TCO_Community":TCO_COMMUNITY}
+	# -------------------- #
 	result = {"simulation_id":idSimulation,"scenario_id":ScenarioID,"scenario_name":str(scenarioDescription[ScenarioID]),\
-		 "TCO_DSO":TCO_DSO,"TCO_Difference":TCO_DIFFERENCE,"TCO_Community":TCO_COMMUNITY}
+		 "Economic_Model_Simulation_Time":simulationTime,\
+		 "TCO_DSO":int(TCO_DSO),"TCO_DSO_YEARLY":int(TCO_DSO/simulationTime),\
+		 "TCO_Households":int(TCO_PROSUMER),"TCO_Households_YEARLY":int(TCO_PROSUMER/simulationTime),\
+		 "TCO_Community":int(TCO_COMMUNITY),"TCO_Community_YEARLY":int(TCO_COMMUNITY/simulationTime)}
+
 	# -------------------- #
 	return json.dumps(result)
 
@@ -752,4 +957,5 @@ if __name__ == "__main__":
 		app.run(host='0.0.0.0', port=9082) # HTTP
 	else:
 		print("[EconomicServer-Backend] PRODUCTION MODE!") # HTTPS
-		app.run(ssl_context=('ssl/nginx-selfsigned.crt', 'ssl/nginx-selfsigned.key'), port=9082)
+		# app.run(ssl_context=('ssl/nginx-selfsigned.crt', 'ssl/nginx-selfsigned.key'), port=9082)
+		app.run(ssl_context=('/etc/letsencrypt/live/dwh.storage4grid.eu/fullchain.pem', '/etc/letsencrypt/live/dwh.storage4grid.eu/privkey.pem'), port=9082)
