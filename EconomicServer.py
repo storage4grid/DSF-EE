@@ -156,10 +156,10 @@ app = Flask(__name__)
 CORS(app)
 # ------------------------------------------------------------------------------------ #
 # VERIFY VERY WELL THE FOLLOWING FLAGS BEFORE BUILDING!
-localDebugHTTP   = True        # Required for building local python app (not inside docker) in HTTP or HTTPS
+localDebugHTTP   = False        # Required for building local python app (not inside docker) in HTTP or HTTPS
 # ------------------------------------------------------------------------------------ #
 enablePrints     = True
-enableFullPrints = True
+enableFullPrints = False
 enableFulldebug  = True
 # ------------------------------------------------------------------------------------ #
 @app.route("/")
