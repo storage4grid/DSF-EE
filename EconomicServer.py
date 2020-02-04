@@ -909,7 +909,7 @@ def startEconomicEvaluation():
 	if(enablePrints == True):
 		print("[EconomicServer] Identified Scenario: [" + str(ScenarioID) + "]")
 		print("[EconomicServer] Identified Scenario: [" + str(scenarioDescription[ScenarioID]) + "]")
-		print("[EconomicServer] TCO(DSO): "        + str(int(TCO_DSO))
+		print("[EconomicServer] TCO(DSO): "        + str(int(TCO_DSO)))
 		print("[EconomicServer] TCO(HOUSEHOLDS): "   + str(int(TCO_PROSUMER)))
 		# print("[EconomicServer] TCO(DIFFERENCE): " + str(int(TCO_DIFFERENCE)))
 		print("[EconomicServer] TCO(COMMUNITY): "  + str(int(TCO_COMMUNITY)))
