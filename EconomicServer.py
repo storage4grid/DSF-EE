@@ -585,7 +585,7 @@ def startEconomicEvaluation():
 			Pen = penIt
 			nhouse = nhouseIt
 			EconsumptionIt = avgP_house_pvIt * nhousePV + avgP_house_WithoutpvIt * houses_without_pv 
-			Econsumption   = EconsumptionDk
+			Econsumption   = EconsumptionIt
 		else:
 			print("[EconomicServer] S4G Unknown Location Provided "+str(locationSimulation))
 			return str("[EconomicServer] S4G Unknown Location Provided "+str(locationSimulation))
