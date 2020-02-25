@@ -190,8 +190,10 @@ Econsumption = [2500,1200,2500,800] # Deprecated (indifferente rispetto allo sce
 # EconsumptionCost = Econsumption[ScenarioID] * Pen (DEPRECATED)
 # EconsumptionCost_PV = Econsumption[location]_PV * Pen
 # EconsumptionCost_without_PV = Econsumption[location]_without_PV * Pen  
+EconsumptionCost_with_ESS
 EconsumptionCost_PV         = 0
 EconsumptionCost_without_PV = 0
+# TODO: aggiornare realmente questi campi!!!!
 
 # ------------------------------------------------------------------------------------ #
 # These values Must be shared among the Scenarios:
@@ -663,6 +665,7 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(CAPEX + CPwLoss))
 						print("DSO_PV["+str(x)+"]="+str(DSO_CF[x]/((1+r)**(x))))
 
+					# TODO cambiare qui e in tutte le formule!! no condizione
 					if(DSO_CF[x] == 0): 
 						PROSUMER_CF.append(0)
 						PROSUMER_PV.append(0)
@@ -727,7 +730,7 @@ def startEconomicEvaluation():
 						print("PROSUMER_PV["+str(x)+"]="+str(PROSUMER_PV[x]))
 
 				else:
-					DSO_CF.append(OPEX + CPwLoss)
+					DSO_CF.append(OPEX + CPwLoss* pSharedPLoss)
 					DSO_PV.append(DSO_CF[x]/((1+r)**(x)))
 
 					if(enableFullPrints == True):
