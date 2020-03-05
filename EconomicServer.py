@@ -158,7 +158,7 @@ CORS(app)
 # VERIFY VERY WELL THE FOLLOWING FLAGS BEFORE BUILDING!
 localDebugHTTP   = False        # Required for building local python app (not inside docker) in HTTP or HTTPS
 # ------------------------------------------------------------------------------------ #
-enablePrints     = False
+enablePrints     = True
 enableFullPrints = False
 enableFulldebug  = True
 # ------------------------------------------------------------------------------------ #
@@ -255,7 +255,7 @@ burocracy = 290.6
 # Updated pilot-specific values (Italy):
 # Price energy:
 penIt = 0.21
-# Number of Households:
+# Number of Households (DEPRECATED):
 nhouseIt = 21
 # Fixed cost amount:
 # fixed_costIt = 9000 # Deprecated
@@ -266,6 +266,7 @@ nhouseIt = 21
 # calcolo avgP_house_pvIt interpolando i valori di ogni scenario
 # Senza PV per IT: consumo medio: 
 # Con PV: 
+# (DEPRECATED)
 avgP_house_pvIt        = 0
 avgP_house_WithoutpvIt = 0
 EconsumptionIt         = 0
@@ -274,14 +275,15 @@ EconsumptionIt         = 0
 # Updated pilot-specific values (Denmark):
 # Price energy:
 penDk = 0.31
-# Number of Households:
+# Number of Households (DEPRECATED):
 nhouseDk = 15
 # Fixed cost amount:
 # fixed_costDk = 9000 # Deprecated
 # Average of Power Consumption:
 # EconsumptionDk = avgP_house_pvDk * nhousePvDk + avgP_house_WithoutpvDk * nhouseWithoutPvDk 
 # Senza PV per Fur: consumo medio: 5218
-# Con PV: 1750
+# Con PV: 1750 
+# (DEPRECATED)
 avgP_house_pvDk        = 1750
 avgP_house_WithoutpvDk = 5218
 EconsumptionDk         = 0
@@ -727,6 +729,13 @@ def startEconomicEvaluation():
 			print("[EconomicServer] EconsumptionCost_with_ESS: " +str(EconsumptionCost_with_ESS))
 			print("[EconomicServer] CPwLoss: " +str(CPwLoss))
 			print("[EconomicServer] simulationTime: " +str(simulationTime))
+			print("[EconomicServer] Overall houses: " +str(nhouse))
+			print("[EconomicServer] nhousePV: " +str(nhousePV))
+			print("[EconomicServer] nhouseESS: " +str(nhouseESS))
+			print("[EconomicServer] houses_without_pv: " +str(houses_without_pv))
+			print("[EconomicServer] residential_capexSize: " +str(residential_capexSize))
+			print("[EconomicServer] real_burocracy_cost: " +str(real_burocracy_cost))
+
 
 		# ---------------------------------------------------------- #
 		# Common values for each Scenario built until now:
@@ -791,7 +800,7 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 			
-					tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + EconsumptionCost_PV * (nhousePV - nhouseESS) + EconsumptionCost_with_ESS * nhouseESS + EconsumptionCost_without_PV * houses_without_pv				
+					tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + EconsumptionCost_PV + EconsumptionCost_with_ESS + EconsumptionCost_without_PV			
 
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
@@ -818,10 +827,10 @@ def startEconomicEvaluation():
 						# battSimulCost = elementRow[0][2]    
 						# residential_capexSize = battSimulCost*avg_res_EssCapacity
 
-						tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + EconsumptionCost_PV * (nhousePV - nhouseESS) + EconsumptionCost_with_ESS * nhouseESS + EconsumptionCost_without_PV * houses_without_pv
+						tmpValue = (nss * residential_capexSize * (1+prudentAverageBatteries)**(x)) + fixed_cost + (pSharedPLoss * CPwLoss) + EconsumptionCost_PV + EconsumptionCost_with_ESS + EconsumptionCost_without_PV
 
 					else:
-						tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost_PV * (nhousePV - nhouseESS) + EconsumptionCost_with_ESS * nhouseESS + EconsumptionCost_without_PV * houses_without_pv
+						tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost_PV + EconsumptionCost_with_ESS + EconsumptionCost_without_PV
 
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
@@ -845,7 +854,7 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
-					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv)
+					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV + EconsumptionCost_without_PV)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
 					if(enableFullPrints == True):
@@ -874,7 +883,7 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(DSO_CF[x]))
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
-					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv)
+					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV + EconsumptionCost_without_PV)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
 					if(enableFullPrints == True):
@@ -898,7 +907,7 @@ def startEconomicEvaluation():
 						print("DSO_PV["+str(x)+"]="+str(DSO_PV[x]))
 
 					# ------------------------------------------------------------------------------------ #
-					tmpValue = (resCounter * residential_capexSize * ( 1 + prudentAverageBatteries )**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost_PV * (nhousePV - nhouseESS) + EconsumptionCost_with_ESS * nhouseESS + EconsumptionCost_without_PV * houses_without_pv
+					tmpValue = (resCounter * residential_capexSize * ( 1 + prudentAverageBatteries )**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost_PV + EconsumptionCost_with_ESS + EconsumptionCost_without_PV
 					# ------------------------------------------------------------------------------------ #
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
@@ -939,10 +948,10 @@ def startEconomicEvaluation():
 						# battSimulCost = elementRow[0][2]    
 						# residential_capexSize = battSimulCost*avg_res_EssCapacity
 
-						tmpValue = (resCounter * residential_capexSize * (1 + prudentAverageBatteries)**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost_PV * (nhousePV - nhouseESS) + EconsumptionCost_with_ESS * nhouseESS + EconsumptionCost_without_PV * houses_without_pv
+						tmpValue = (resCounter * residential_capexSize * (1 + prudentAverageBatteries)**(x)) + fixed_cost + pSharedPLoss * CPwLoss + EconsumptionCost_PV + EconsumptionCost_with_ESS + EconsumptionCost_without_PV
 
 					else:
-						tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost_PV * (nhousePV - nhouseESS) + EconsumptionCost_with_ESS * nhouseESS + EconsumptionCost_without_PV * houses_without_pv
+						tmpValue = CPwLoss * pSharedPLoss + EconsumptionCost_PV + EconsumptionCost_with_ESS + EconsumptionCost_without_PV
 					# ------------------------------------------------------------------------------------ #
 					PROSUMER_CF.append(tmpValue)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
