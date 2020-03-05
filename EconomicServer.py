@@ -776,7 +776,7 @@ def startEconomicEvaluation():
 						print("DSO_CF["+str(x)+"]="+str(OPEX + CPwLoss * pSharedPLoss))
 						print("DSO_PV["+str(x)+"]="+str(DSO_CF[x]/((1+r)**(x))))
 
-					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV * nhousePV + EconsumptionCost_without_PV * houses_without_pv)
+					PROSUMER_CF.append(CPwLoss * pSharedPLoss + EconsumptionCost_PV + EconsumptionCost_without_PV)
 					PROSUMER_PV.append(PROSUMER_CF[x] / ((1+r)**(x)))
 
 					if(enableFullPrints == True):
