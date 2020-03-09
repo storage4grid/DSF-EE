@@ -294,7 +294,7 @@ yearly_tco             = 0
 debugExtension = ".json"
 # ------------------------------------------------------------------------------------ #
 # Allowed Scenario: [0,1,2,3]
-scenarioDescription = ["Scenario 0: Traditional Grid Strengthening (Baseline)",\
+scenarioDescription = ["Scenario 0: Traditional Grid Strengthening",\
 			"Scenario 1: Decentralized Storage at household level",\
 			"Scenario 2: Centralized Storage at Sub-station level",\
 			"Scenario 3: Both centralized and decentralized storage"]
