@@ -8,18 +8,41 @@ server {
 #    listen 9081;
 # ------------------------------------------- #
 # Production Purposes (https only management)
+# Exploiting self-signed certificates
+# Built on host machine and copied by Docker
+# inside the container
 # ------------------------------------------- #
+# "Common Values"
     listen 9081 ssl;
-    listen [::]:9081 ssl;
-
+    listen [::]:9081 ssl ipv6only=on; # managed by Certbot
     ssl on;
-    ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
-    ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
-       
-    ssl_session_timeout 5m;       
-    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
-    ssl_ciphers "HIGH:!aNULL:!MD5 or HIGH:!aNULL:!MD5:!3DES";
-    ssl_prefer_server_ciphers on;
+# ------------------------------------------- #
+#    ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
+#    ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
+#       
+#    ssl_session_timeout 5m;       
+#    ssl_protocols TLSv1 TLSv1.1 TLSv1.2; # Security Leak
+#    ssl_protocols TLSv1.2;
+#    ssl_ciphers "HIGH:!aNULL:!MD5 or HIGH:!aNULL:!MD5:!3DES";
+#    ssl_prefer_server_ciphers on;
+#
+# ------------------------------------------- #
+# Production Purposes (https only management)
+# Exploiting Let's Encrypt certificates
+# ------------------------------------------- #
+    server_name  dwh.storage4grid.eu;
+    ssl_certificate /etc/letsencrypt/live/dwh.storage4grid.eu/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/dwh.storage4grid.eu/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+
+    add_header Strict-Transport-Security "max-age=31536000" always; # managed by Certbot
+
+    ssl_trusted_certificate /etc/letsencrypt/live/dwh.storage4grid.eu/chain.pem; # managed by Certbot
+    ssl_stapling on; # managed by Certbot
+    ssl_stapling_verify on; # managed by Certbot
+# ------------------------------------------- #
+
 
 # ------------------------------------------- #
 # uWSGI configuration
@@ -31,4 +54,22 @@ server {
     }
 
 }
+
+# DUplicated due to the presence of the containerized default one!
+#server {
+#    if ($host = dwh.storage4grid.eu) {
+#        return 301 https://$host$request_uri;
+#    } # managed by Certbot
+#
+#
+#    listen 80 default_server;
+#    listen [::]:80 default_server;
+#    # root /var/www/html;
+#    server_name dwh.storage4grid.eu;
+#
+#    location ~ /.well-known {
+#        allow all;
+#        root /var/www/html/shared;
+#    }
+#}
 
